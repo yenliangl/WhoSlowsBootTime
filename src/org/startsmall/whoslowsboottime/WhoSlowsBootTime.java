@@ -1,4 +1,4 @@
-package org.startsmall.whoslowmyboot;
+package org.startsmall.whoslowsboottime;
 
 import android.app.ListActivity;
 import android.content.Context;
@@ -11,14 +11,14 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-
+import android.view.Window;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.util.*;
 
-public class WhoSlowMyBoot extends ListActivity {
+public class WhoSlowsBootTime extends ListActivity {
 
     private class MyAdapter extends ArrayAdapter<ResolveInfo> {
         private final PackageManager mPackageManager;
@@ -61,13 +61,20 @@ public class WhoSlowMyBoot extends ListActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // setContentView(R.layout.main);
+
+        // Request progress bar
+        requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
+        setContentView(R.layout.main);
+
+        setProgressBarIndeterminateVisibility(true);
 
         PackageManager pm = getPackageManager();
         List<ResolveInfo> actions =
             pm.queryBroadcastReceivers(prepareQueryIntent(), 0);
 
         setListAdapter(new MyAdapter(this, actions));
+
+        setProgressBarIndeterminateVisibility(false);
     }
 
     private Intent prepareQueryIntent() {
