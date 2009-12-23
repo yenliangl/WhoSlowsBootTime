@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Who Slows Boot Time</string>
+
+    <string name="menu_item_disable">Disable</string>
+    <string name="menu_item_enable">Enable</string>
+
+    <string name="options_menu_item_filter">Filter</string>
+
 </resources>
