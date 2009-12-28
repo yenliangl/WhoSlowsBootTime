@@ -1,81 +1,174 @@
 package org.startsmall.whoslowsboottime;
 
-import android.app.AlertDialog;
 import android.app.ListActivity;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.view.ContextMenu;
+import android.os.Handler;
+import android.os.Message;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.widget.ArrayAdapter;
+import android.util.Log;
+import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.util.*;
+import java.util.concurrent.*;
 
-public class WhoSlowsBootTime extends ListActivity
-                              implements DialogInterface.OnClickListener {
-    private static final int MENU_ITEM_ID_DISABLE = 0;
-    private static final int MENU_ITEM_ID_ENABLE = 1;
+public class WhoSlowsBootTime extends ListActivity {
+    class AppInfo {
+        public String name;
+        public CharSequence label;
+        public Drawable icon;
+    }
 
-    private static final int OPTIONS_MENU_ITEM_ID_FILTER = 0;
+    private static class AppInfoAdapter extends BaseAdapter {
+        static class WidgetCache {
+            ImageView imageView;
+            TextView labelView;
+            TextView nameView;
+        }
 
-    private static final int FILTER_OPTION_ALL = 0;
-    private static final int FILTER_OPTION_SYSTEM = 1;
-    private static final int FILTER_OPTION_THIRD_PARTY = 2;
+        // private Map<String, AppInfo> mAppInfoMap = new HashMap<String, AppInfo>();
+        private List<AppInfo> mAppInfoList = new LinkedList<AppInfo>();
+        private LayoutInflater mInflater;
 
-    private List<ResolveInfo> mAllAppsCache;
-
-    private class MyAdapter extends ArrayAdapter<ResolveInfo> {
-        private final PackageManager mPackageManager;
-        private final LayoutInflater mInflater;
-
-        MyAdapter(Context context, List<ResolveInfo> l) {
-            super(context, 0, 0, l);
-
-            mPackageManager = context.getPackageManager();
+        public AppInfoAdapter(Context context) {
             mInflater = (LayoutInflater)context.getSystemService(
                 Context.LAYOUT_INFLATER_SERVICE);
+        }
 
+        public void clear() {
+            mAppInfoList.clear();
+        }
+
+        public void add(AppInfo appInfo) {
+            mAppInfoList.add(appInfo);
+        }
+
+        @Override
+        public int getCount() {
+            return mAppInfoList.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return mAppInfoList.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
         }
 
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
-            View view =
-                mInflater.inflate(R.layout.list_item, parent, false);
 
-            ActivityInfo activityInfo = getItem(position).activityInfo;
+            Log.d(TAG, "====> getView(): position=" + position + ", convertView=" + convertView);
 
-            ImageView iconView =
-                (ImageView)view.findViewById(R.id.icon);
-            Drawable icon = activityInfo.loadIcon(mPackageManager);
-            iconView.setImageDrawable(icon);
+            AppInfo appInfo = (AppInfo)getItem(position);
 
-            TextView labelView =
-                (TextView)view.findViewById(R.id.label);
-            final String label =
-                activityInfo.loadLabel(mPackageManager).toString();
-            labelView.setText(label);
+            WidgetCache widgetCache;
+            if (convertView == null) { // this is a new view
+                convertView =
+                    mInflater.inflate(R.layout.list_item, parent, false);
+                widgetCache = new WidgetCache();
+                widgetCache.imageView = (ImageView)convertView.findViewById(R.id.icon);
+                widgetCache.labelView = (TextView)convertView.findViewById(R.id.label);
+                widgetCache.nameView = (TextView)convertView.findViewById(R.id.name);
+                convertView.setTag(widgetCache);
+            } else {
+                widgetCache = (WidgetCache)convertView.getTag();
+            }
 
-            TextView nameView = (TextView)view.findViewById(R.id.name);
-            nameView.setText(activityInfo.name);
+            widgetCache.imageView.setImageDrawable(appInfo.icon);
+            widgetCache.labelView.setText(appInfo.label);
+            widgetCache.nameView.setText(appInfo.name);
+            return convertView;
+        }
 
-            return view;
+        public void updateView() {
+            if (!mAppInfoList.isEmpty()) {
+                notifyDataSetChanged();
+            }
         }
     }
 
+    private class LoadAppInfoTask implements Runnable {
+        public void run() {
+            mHandler.sendEmptyMessage(ADD_PACKAGE_BEGIN);
+            List<ResolveInfo> resolveInfoList =
+                mPackageManager.queryBroadcastReceivers(new Intent(Intent.ACTION_BOOT_COMPLETED), 0);
+            // int count = 0;
+            for (ResolveInfo info : resolveInfoList) {
+                ActivityInfo activityInfo = info.activityInfo;
+                AppInfo appInfo = new AppInfo();
+                appInfo.name = activityInfo.name;
+                appInfo.label = activityInfo.loadLabel(mPackageManager);
+                appInfo.icon = activityInfo.loadIcon(mPackageManager);
+                mHandler.sendMessage(mHandler.obtainMessage(ADD_PACKAGE, appInfo));
+
+                // if (count % 5 == 0) {
+                //     mHandler.sendEmptyMessage(ADD_PACKAGE_UPDATE);
+                // }
+
+                // count++;
+            }
+            mHandler.sendEmptyMessage(ADD_PACKAGE_END);
+        }
+    }
+
+    private Handler mHandler = new Handler() {
+            @Override
+            public void handleMessage(Message msg) {
+                switch (msg.what) {
+                case ADD_PACKAGE_BEGIN:
+                    setProgressBarIndeterminateVisibility(true);
+                    mAdapter.clear();
+                    break;
+                case ADD_PACKAGE:
+                    AppInfo appInfo = (AppInfo)msg.obj;
+                    mAdapter.add(appInfo);
+                    break;
+
+                // case ADD_PACKAGE_UPDATE:
+                //     Log.d(TAG, "===> handleMessage(): ADD_PACKAGE_UPDATE");
+
+
+                //     mAdapter.updateView();
+                //     break;
+
+                case ADD_PACKAGE_END:
+
+                    Log.d(TAG, "===> handleMessage(): ADD_PACKAGE_END");
+
+                    mAdapter.updateView();
+                    setProgressBarIndeterminateVisibility(false);
+                    break;
+                }
+            }
+        };
+
+    private static final String TAG = "WhoSlowsBootTime";
+
+    private static final int ADD_PACKAGE_BEGIN = 0;
+    private static final int ADD_PACKAGE = 1;
+    private static final int ADD_PACKAGE_UPDATE = 2;
+    private static final int ADD_PACKAGE_END = 3;
+
+    private ExecutorService mExecutor;
+    private PackageManager mPackageManager;
+    private AppInfoAdapter mAdapter;
+
+    /** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -84,79 +177,13 @@ public class WhoSlowsBootTime extends ListActivity
         requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
         setContentView(R.layout.main);
 
-        setProgressBarIndeterminateVisibility(true);
+        mPackageManager = getPackageManager();
+        mExecutor = Executors.newSingleThreadExecutor();
+        mAdapter = new AppInfoAdapter(this);
 
-        PackageManager pm = getPackageManager();
-        mAllAppsCache =
-            pm.queryBroadcastReceivers(new Intent(Intent.ACTION_BOOT_COMPLETED), 0);
+        setListAdapter(mAdapter);
 
-        setListAdapter(new MyAdapter(this, mAllAppsCache));
-
-        setProgressBarIndeterminateVisibility(false);
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        menu.add(0, OPTIONS_MENU_ITEM_ID_FILTER, 1,
-                 R.string.options_menu_item_filter).setIcon(R.drawable.ic_menu_filter_settings);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        int itemId = item.getItemId();
-        switch (itemId) {
-        case OPTIONS_MENU_ITEM_ID_FILTER:
-            AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this);
-            dialogBuilder.
-                setItems(R.array.filter_options, this).
-                setTitle("Select filter option").create().show();
-            break;
-        }
-
-        return true;
-    }
-
-    public void onClick(DialogInterface dialog, int which) {
-        updateAppList(which);
-        dialog.dismiss();
-    }
-
-    private void updateAppList(int filterOption) {
-        List<ResolveInfo> newAppList = mAllAppsCache;
-        if (filterOption != FILTER_OPTION_ALL) {
-            newAppList = getFilteredApps(filterOption);
-        }
-        setListAdapter(new MyAdapter(this, newAppList));
-    }
-
-    private List<ResolveInfo> getFilteredApps(int filterOption) {
-        List<ResolveInfo> newList = new ArrayList<ResolveInfo>(mAllAppsCache.size());
-        switch (filterOption) {
-        case FILTER_OPTION_SYSTEM:
-            for (ResolveInfo resolveInfo : mAllAppsCache) {
-                ApplicationInfo appInfo = resolveInfo.activityInfo.applicationInfo;
-                if ((appInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
-                    newList.add(resolveInfo);
-                }
-            }
-            break;
-
-        case FILTER_OPTION_THIRD_PARTY:
-            for (ResolveInfo resolveInfo : mAllAppsCache) {
-                ApplicationInfo appInfo = resolveInfo.activityInfo.applicationInfo;
-                // if ((appInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0 ||
-                //     (appInfo.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
-                //     newList.add(resolveInfo);
-                // }
-
-                if ((appInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0) {
-                    newList.add(resolveInfo);
-                }
-            }
-            break;
-        }
-
-        return newList;
+        mExecutor.execute(new LoadAppInfoTask());
+        mExecutor.shutdown();
     }
 }
